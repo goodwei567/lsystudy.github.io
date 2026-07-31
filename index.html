@@ -78,6 +78,10 @@
     .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 20px; }
     .panel-kicker { margin: 0 0 4px; color: var(--mint-strong); font-size: 12px; font-weight: 900; letter-spacing: .08em; }
     .panel-title { margin: 0; color: var(--navy); font-size: 22px; line-height: 1.3; }
+    .study-heading { display: grid; gap: 10px; }
+    .mode-switch { display: inline-flex; width: fit-content; gap: 3px; padding: 4px; border-radius: 15px; background: #edf2ee; box-shadow: var(--shadow-pressed); }
+    .mode-button { min-height: 34px; padding: 6px 12px; border: 0; border-radius: 11px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 950; }
+    .mode-button.active { background: var(--paper); box-shadow: var(--shadow-soft); color: var(--navy); }
     .progress-pill { flex: 0 0 auto; display: grid; place-items: center; min-width: 78px; min-height: 44px; padding: 5px 13px; border-radius: 17px; background: var(--butter); box-shadow: var(--shadow-soft); color: var(--navy); font-size: 12px; font-weight: 900; text-align: center; }
     .progress-pill strong { display: block; font-size: 16px; }
 
@@ -147,8 +151,15 @@
     .number-button:hover { background: var(--sky); color: var(--navy); }
     .number-button.current { background: var(--sky-strong); color: #fff; box-shadow: 3px 4px 0 rgba(77,158,183,.2); }
     .number-button.done { background: var(--mint); color: #397c67; }
+    .number-button.exam-correct { background: #d6f2e4; color: #246b57; box-shadow: inset 0 0 0 2px rgba(95,174,147,.3); }
+    .number-button.exam-wrong { background: #ffd8e1; color: #9a3c57; box-shadow: inset 0 0 0 2px rgba(227,128,151,.28); }
     .number-button.favorite { box-shadow: inset 0 0 0 2px var(--coral); }
     .empty-state { grid-column: 1 / -1; padding: 22px 10px; color: var(--muted); font-size: 13px; text-align: center; }
+    .exam-result { display: none; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px; margin-top: 18px; padding: 17px; border-radius: 20px; background: var(--butter); box-shadow: var(--shadow-soft); }
+    .exam-result.visible { display: grid; }
+    .exam-score { display: grid; place-items: center; width: 78px; height: 78px; border-radius: 24px; background: var(--coral); color: #fffdf8; font-size: 22px; font-weight: 950; box-shadow: var(--shadow-soft); }
+    .exam-result-title { margin: 0; color: var(--navy); font-size: 15px; font-weight: 950; }
+    .exam-summary { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
     .side-foot { display: flex; align-items: center; gap: 9px; margin-top: 19px; padding-top: 17px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 750; }
     .side-foot > span:first-child { display: grid; place-items: center; flex: 0 0 23px; width: 23px; height: 23px; border-radius: 8px; background: var(--mint); color: #397c67; }
     .side-foot > span:last-child { flex: 1; }
@@ -175,6 +186,8 @@
       .study-panel { padding: 15px; }
       .panel-head { gap: 10px; }
       .panel-title { font-size: 19px; }
+      .exam-result { grid-template-columns: auto 1fr; }
+      .exam-result .soft-button { grid-column: 1 / -1; width: 100%; }
       .progress-pill { min-width: 68px; min-height: 40px; }
       .flashcard { min-height: 500px; padding: 22px 18px; border-radius: 22px; }
       .card-content { min-height: 365px; }
@@ -213,7 +226,7 @@
         <div class="stats" aria-label="题库概况">
           <span class="stat"><b id="total-stat">148</b> 道题</span>
           <span class="stat"><b id="type-stat">6</b> 类题型</span>
-          <span class="stat"><b id="done-stat">0</b> 张已记住</span>
+          <span class="stat"><b id="done-stat">0</b> <span id="done-label">张已记住</span></span>
         </div>
       </div>
       <div class="buddy-board" aria-label="复习搭子插画">
@@ -228,7 +241,13 @@
     <section class="workspace" aria-label="抽认卡学习区">
       <section class="study-panel" aria-labelledby="study-title">
         <div class="panel-head">
-          <div><p class="panel-kicker">NOW STUDYING</p><h2 class="panel-title" id="study-title">今日抽认卡</h2></div>
+          <div class="study-heading">
+            <div><p class="panel-kicker" id="study-kicker">NOW STUDYING</p><h2 class="panel-title" id="study-title">今日抽认卡</h2></div>
+            <div class="mode-switch" role="group" aria-label="选择学习模式">
+              <button class="mode-button active" id="study-mode-button" type="button" data-mode="study" aria-pressed="true">学习模式</button>
+              <button class="mode-button" id="exam-mode-button" type="button" data-mode="exam" aria-pressed="false">考试模式</button>
+            </div>
+          </div>
           <div class="progress-pill"><strong id="card-progress">1 / 148</strong><span>当前题目</span></div>
         </div>
 
@@ -262,6 +281,11 @@
           <button class="review-button" id="remember-button" type="button">✓ 记住了，下一张</button>
           <button class="review-button retry" id="retry-button" type="button">↺ 再练一次</button>
         </div>
+        <section class="exam-result" id="exam-result" aria-live="polite">
+          <div class="exam-score" id="exam-score">0%</div>
+          <div><p class="exam-result-title">考试完成</p><p class="exam-summary" id="exam-summary"></p></div>
+          <button class="soft-button" id="restart-exam" type="button">再考一次</button>
+        </section>
       </section>
 
       <aside class="side-panel" aria-labelledby="library-title">
@@ -290,11 +314,15 @@
       const state = {
         currentId: Number(saved.currentId) || 1,
         revealed: false,
+        mode: "study",
         filter: "全部",
         search: "",
         remembered: new Set(Array.isArray(saved.remembered) ? saved.remembered : []),
         favorites: new Set(Array.isArray(saved.favorites) ? saved.favorites : []),
-        selectedChoices: new Set()
+        selectedChoices: new Set(),
+        examAnswered: new Set(),
+        examCorrect: new Set(),
+        examLocked: new Set()
       };
 
       const $ = (selector) => document.querySelector(selector);
@@ -311,6 +339,12 @@
       const nextButton = $("#next-button");
       const favoriteButton = $("#favorite-button");
       const reviewActions = $("#review-actions");
+      const studyKicker = $("#study-kicker");
+      const studyTitle = $("#study-title");
+      const modeButtons = document.querySelectorAll(".mode-button");
+      const examResult = $("#exam-result");
+      const examScore = $("#exam-score");
+      const examSummary = $("#exam-summary");
       const filterList = $("#filter-list");
       const searchInput = $("#search-input");
       const numberGrid = $("#number-grid");
@@ -356,6 +390,26 @@
         }));
       }
 
+      function renderMode() {
+        const isExam = state.mode === "exam";
+        modeButtons.forEach((button) => {
+          const active = button.dataset.mode === state.mode;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-pressed", active);
+        });
+        studyKicker.textContent = isExam ? "EXAM MODE" : "NOW STUDYING";
+        studyTitle.textContent = isExam ? "模拟考试" : "今日抽认卡";
+      }
+
+      function renderExamResult() {
+        if (state.mode !== "exam" || state.examAnswered.size < questions.length) return;
+        const correct = state.examCorrect.size;
+        const percentage = Math.round((correct / questions.length) * 100);
+        examScore.textContent = `${percentage}%`;
+        examSummary.textContent = `答对 ${correct} 题，答错 ${questions.length - correct} 题，共 ${questions.length} 题。`;
+        examResult.classList.add("visible");
+      }
+
       function renderNumbers() {
         const visible = getVisibleQuestions();
         $("#visible-count").textContent = `${visible.length} 题`;
@@ -368,6 +422,8 @@
           if (item.id === state.currentId) classes.push("current");
           if (state.remembered.has(item.id)) classes.push("done");
           if (state.favorites.has(item.id)) classes.push("favorite");
+          if (state.mode === "exam" && state.examCorrect.has(item.id)) classes.push("exam-correct");
+          if (state.mode === "exam" && state.examLocked.has(item.id) && !state.examCorrect.has(item.id)) classes.push("exam-wrong");
           return `<button class="${classes.join(" ")}" type="button" data-id="${item.id}" aria-label="第 ${item.id} 题">${item.id}</button>`;
         }).join("");
         numberGrid.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => selectQuestion(Number(button.dataset.id))));
@@ -376,8 +432,11 @@
       function renderCard() {
         const item = getQuestion(state.currentId);
         if (!item) return;
+        const examLocked = state.mode === "exam" && state.examLocked.has(item.id);
+        const cardRevealed = state.revealed || examLocked;
+        const examObjective = state.mode === "exam" && item.options.length > 0;
         questionId.textContent = String(item.id).padStart(2, "0");
-        questionStatus.textContent = state.selectedChoices.size ? "选项已标记" : (state.remembered.has(item.id) ? "已经记住" : "准备好了吗");
+        questionStatus.textContent = examLocked ? (state.examCorrect.has(item.id) ? "回答正确" : "本题已锁定") : (state.selectedChoices.size ? "选项已标记" : (state.remembered.has(item.id) ? "已经记住" : "准备好了吗"));
         questionType.textContent = item.type;
         questionText.textContent = item.question;
         const answers = answerLetters(item.answer);
@@ -387,31 +446,40 @@
           const classes = ["option"];
           if (selected && correct) classes.push("is-correct");
           if (selected && !correct) classes.push("is-wrong");
-          if (state.revealed && correct) classes.push("is-answer");
-          return `<button class="${classes.join(" ")}" type="button" data-option="${option.label}" aria-pressed="${selected}"><span class="option-key">${option.label}</span><span>${option.text}</span></button>`;
+          if (cardRevealed && correct) classes.push("is-answer");
+          const disabled = examLocked ? " disabled" : "";
+          return `<button class="${classes.join(" ")}" type="button" data-option="${option.label}" aria-pressed="${selected}"${disabled}><span class="option-key">${option.label}</span><span>${option.text}</span></button>`;
         }).join("");
         options.style.display = item.options.length ? "grid" : "none";
         options.querySelectorAll(".option").forEach((button) => button.addEventListener("click", () => chooseOption(button.dataset.option)));
         answerText.textContent = item.answer || "题库暂未填写标准答案，先记下思路，之后和老师或课本核对。";
-        flashcard.classList.toggle("revealed", state.revealed);
-        revealButton.textContent = state.revealed ? "合上答案 ↺" : "翻开答案 ✦";
-        cardTip.textContent = state.revealed ? "看完答案，给自己一个记忆判断" : "先在心里选一个，再翻开答案";
-        reviewActions.style.display = state.revealed ? "grid" : "none";
+        flashcard.classList.toggle("revealed", cardRevealed);
+        revealButton.textContent = examObjective ? (examLocked ? "本题已判分" : "考试中 · 选项作答") : (state.revealed ? "合上答案 ↺" : "翻开答案 ✦");
+        revealButton.disabled = examObjective;
+        cardTip.textContent = examObjective ? (examLocked ? "本题已判分，继续下一题" : "考试中，选错后本题会锁定") : (state.revealed ? "看完答案，给自己一个记忆判断" : "先在心里选一个，再翻开答案");
+        const showReview = state.mode === "study" ? state.revealed : (!item.options.length && state.revealed && !examLocked);
+        reviewActions.style.display = showReview ? "grid" : "none";
+        $("#remember-button").textContent = state.mode === "exam" ? "✓ 自评正确" : "✓ 记住了，下一张";
+        $("#retry-button").textContent = state.mode === "exam" ? "✕ 自评错误" : "↺ 再练一次";
         favoriteButton.classList.toggle("is-favorite", state.favorites.has(item.id));
         favoriteButton.setAttribute("aria-pressed", state.favorites.has(item.id));
         favoriteButton.querySelector(".favorite-symbol").textContent = state.favorites.has(item.id) ? "♥" : "♡";
         $("#card-progress").textContent = `${item.id} / ${questions.length}`;
-        $("#progress-label").textContent = `${state.remembered.size} / ${questions.length}`;
-        $("#progress-fill").style.width = `${Math.min(100, (state.remembered.size / questions.length) * 100)}%`;
-        $("#done-stat").textContent = state.remembered.size;
+        const progressCount = state.mode === "exam" ? state.examAnswered.size : state.remembered.size;
+        $("#progress-label").textContent = `${progressCount} / ${questions.length}`;
+        $("#progress-fill").style.width = `${Math.min(100, (progressCount / questions.length) * 100)}%`;
+        $("#done-stat").textContent = progressCount;
+        $("#done-label").textContent = state.mode === "exam" ? "题已作答" : "张已记住";
         previousButton.disabled = item.id === 1;
-        nextButton.disabled = item.id === questions.length;
+        nextButton.disabled = state.mode === "study" && item.id === questions.length;
+        nextButton.textContent = state.mode === "exam" && item.id === questions.length ? "查看成绩 →" : "下一题 →";
         persist();
       }
 
       function renderAll() {
         $("#total-stat").textContent = questions.length;
         $("#type-stat").textContent = new Set(questions.map((item) => item.type)).size;
+        renderMode();
         renderFilters();
         renderNumbers();
         renderCard();
@@ -429,15 +497,84 @@
       function move(step) {
         const visible = getVisibleQuestions();
         if (!visible.length) return;
+        if (state.mode === "exam" && step > 0 && state.currentId === questions.length) {
+          if (state.examAnswered.size === questions.length) renderExamResult();
+          else showToast(`还有 ${questions.length - state.examAnswered.size} 题未完成`);
+          return;
+        }
         const index = visible.findIndex((item) => item.id === state.currentId);
         const nextIndex = index < 0 ? 0 : (index + step + visible.length) % visible.length;
         selectQuestion(visible[nextIndex].id);
       }
 
+      function finishExamAnswer(isCorrect) {
+        const item = getQuestion(state.currentId);
+        if (!item || state.mode !== "exam" || state.examLocked.has(item.id)) return;
+        state.examAnswered.add(item.id);
+        state.examLocked.add(item.id);
+        if (isCorrect) state.examCorrect.add(item.id);
+        else state.examCorrect.delete(item.id);
+        state.revealed = true;
+        renderNumbers();
+        renderCard();
+        showToast(isCorrect ? "回答正确，继续下一题" : "回答错误，本题已锁定");
+        renderExamResult();
+      }
+
+      function markExamSubjective(isCorrect) {
+        const item = getQuestion(state.currentId);
+        if (!item || item.options.length || state.mode !== "exam") return;
+        finishExamAnswer(isCorrect);
+      }
+
+      function setMode(mode) {
+        if (mode === state.mode) return;
+        state.mode = mode;
+        state.currentId = 1;
+        state.revealed = false;
+        state.filter = "全部";
+        state.search = "";
+        searchInput.value = "";
+        state.selectedChoices.clear();
+        state.examAnswered.clear();
+        state.examCorrect.clear();
+        state.examLocked.clear();
+        examResult.classList.remove("visible");
+        renderMode();
+        renderFilters();
+        renderNumbers();
+        renderCard();
+        showToast(mode === "exam" ? "考试开始，选错后本题锁定" : "已回到学习模式");
+      }
+
       function chooseOption(label) {
         const item = getQuestion(state.currentId);
         if (!item || !item.options.length) return;
+        if (state.mode === "exam" && state.examLocked.has(item.id)) {
+          showToast("本题已经判分，不能再次作答");
+          return;
+        }
         const answers = answerLetters(item.answer);
+        if (state.mode === "exam") {
+          if (item.type === "多选题") {
+            if (state.selectedChoices.has(label)) state.selectedChoices.delete(label);
+            else state.selectedChoices.add(label);
+            if (!answers.includes(label)) {
+              finishExamAnswer(false);
+              return;
+            }
+            const complete = state.selectedChoices.size === answers.length && answers.every((answer) => state.selectedChoices.has(answer));
+            if (complete) finishExamAnswer(true);
+            else {
+              showToast("选项正确，继续选择本题答案");
+              renderCard();
+            }
+            return;
+          }
+          state.selectedChoices = new Set([label]);
+          finishExamAnswer(answers.includes(label));
+          return;
+        }
         if (item.type === "多选题") {
           if (state.selectedChoices.has(label)) state.selectedChoices.delete(label);
           else state.selectedChoices.add(label);
@@ -449,9 +586,16 @@
         renderCard();
       }
 
-      revealButton.addEventListener("click", () => { state.revealed = !state.revealed; renderCard(); });
+      revealButton.addEventListener("click", () => {
+        const item = getQuestion(state.currentId);
+        if (state.mode === "exam" && item && item.options.length) return;
+        state.revealed = !state.revealed;
+        renderCard();
+      });
       flashcard.addEventListener("click", (event) => {
         if (event.target.closest("button")) return;
+        const item = getQuestion(state.currentId);
+        if (state.mode === "exam" && item && item.options.length) return;
         state.revealed = !state.revealed;
         renderCard();
       });
@@ -464,18 +608,55 @@
         renderCard();
       });
       $("#remember-button").addEventListener("click", () => {
+        if (state.mode === "exam") {
+          markExamSubjective(true);
+          return;
+        }
         state.remembered.add(state.currentId);
         showToast("记忆进度 +1，继续保持");
         renderNumbers();
         move(1);
       });
-      $("#retry-button").addEventListener("click", () => { state.revealed = false; state.selectedChoices.clear(); renderCard(); });
+      $("#retry-button").addEventListener("click", () => {
+        if (state.mode === "exam") {
+          markExamSubjective(false);
+          return;
+        }
+        state.revealed = false;
+        state.selectedChoices.clear();
+        renderCard();
+      });
+      modeButtons.forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
+      $("#restart-exam").addEventListener("click", () => {
+        state.mode = "exam";
+        state.currentId = 1;
+        state.revealed = false;
+        state.filter = "全部";
+        state.search = "";
+        searchInput.value = "";
+        state.selectedChoices.clear();
+        state.examAnswered.clear();
+        state.examCorrect.clear();
+        state.examLocked.clear();
+        examResult.classList.remove("visible");
+        renderMode();
+        renderFilters();
+        renderNumbers();
+        renderCard();
+        showToast("新的考试开始");
+      });
       searchInput.addEventListener("input", () => { state.search = searchInput.value; renderNumbers(); });
       document.addEventListener("keydown", (event) => {
         if (event.target.matches("input")) return;
         if (event.key === "ArrowLeft") move(-1);
         if (event.key === "ArrowRight") move(1);
-        if (event.key === " " || event.key === "Enter") { event.preventDefault(); state.revealed = !state.revealed; renderCard(); }
+        if (event.key === " " || event.key === "Enter") {
+          const item = getQuestion(state.currentId);
+          if (state.mode === "exam" && item && item.options.length) return;
+          event.preventDefault();
+          state.revealed = !state.revealed;
+          renderCard();
+        }
       });
 
       renderAll();
