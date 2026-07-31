@@ -93,7 +93,13 @@
     .prompt-label { margin: 0 0 12px; color: rgba(36,77,101,.7); font-size: 12px; font-weight: 900; letter-spacing: .08em; }
     .question-text { max-width: 850px; margin: 0; color: var(--navy); font-size: clamp(25px, 3vw, 39px); line-height: 1.34; letter-spacing: 0; }
     .options { display: grid; gap: 10px; margin-top: 24px; }
-    .option { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; padding: 12px 15px; border-radius: 16px; background: rgba(255,255,255,.57); box-shadow: var(--shadow-soft); color: var(--navy); font-size: 15px; line-height: 1.55; }
+    .option { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; width: 100%; padding: 12px 15px; border: 0; border-radius: 16px; background: rgba(255,255,255,.57); box-shadow: var(--shadow-soft); color: var(--navy); cursor: pointer; font: inherit; font-size: 15px; line-height: 1.55; text-align: left; transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease; }
+    .option:hover { background: rgba(255,255,255,.82); transform: translateY(-1px); }
+    .option.is-correct { background: #d6f2e4; box-shadow: 7px 8px 0 rgba(72, 143, 111, .13), inset 4px 4px 10px rgba(255,255,255,.78), inset -5px -5px 11px rgba(95, 174, 147, .12); color: #246b57; }
+    .option.is-wrong { background: #ffd8e1; box-shadow: 7px 8px 0 rgba(190, 92, 117, .12), inset 4px 4px 10px rgba(255,255,255,.78), inset -5px -5px 11px rgba(227, 128, 151, .13); color: #9a3c57; }
+    .option.is-answer { background: #d6f2e4; color: #246b57; }
+    .option.is-correct .option-key, .option.is-answer .option-key { background: #aee0c7; color: #246b57; }
+    .option.is-wrong .option-key { background: #f5a7b9; color: #8f304e; }
     .option-key { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 10px; background: rgba(255,255,255,.84); color: var(--sky-strong); font-size: 12px; font-weight: 950; }
     .answer-block { display: none; margin-top: 24px; padding: 20px 21px; border-radius: 20px; background: rgba(255,255,255,.68); box-shadow: var(--shadow-pressed); }
     .revealed .answer-block { display: block; animation: answerIn .25s ease-out; }
@@ -287,7 +293,8 @@
         filter: "全部",
         search: "",
         remembered: new Set(Array.isArray(saved.remembered) ? saved.remembered : []),
-        favorites: new Set(Array.isArray(saved.favorites) ? saved.favorites : [])
+        favorites: new Set(Array.isArray(saved.favorites) ? saved.favorites : []),
+        selectedChoices: new Set()
       };
 
       const $ = (selector) => document.querySelector(selector);
@@ -318,6 +325,10 @@
 
       function getQuestion(id) {
         return questions.find((item) => item.id === id) || questions[0];
+      }
+
+      function answerLetters(answer) {
+        return (answer || "").match(/[A-D]/g) || [];
       }
 
       function getVisibleQuestions() {
@@ -366,11 +377,21 @@
         const item = getQuestion(state.currentId);
         if (!item) return;
         questionId.textContent = String(item.id).padStart(2, "0");
-        questionStatus.textContent = state.remembered.has(item.id) ? "已经记住" : "准备好了吗";
+        questionStatus.textContent = state.selectedChoices.size ? "选项已标记" : (state.remembered.has(item.id) ? "已经记住" : "准备好了吗");
         questionType.textContent = item.type;
         questionText.textContent = item.question;
-        options.innerHTML = item.options.map((option) => `<div class="option"><span class="option-key">${option.label}</span><span>${option.text}</span></div>`).join("");
+        const answers = answerLetters(item.answer);
+        options.innerHTML = item.options.map((option) => {
+          const selected = state.selectedChoices.has(option.label);
+          const correct = answers.includes(option.label);
+          const classes = ["option"];
+          if (selected && correct) classes.push("is-correct");
+          if (selected && !correct) classes.push("is-wrong");
+          if (state.revealed && correct) classes.push("is-answer");
+          return `<button class="${classes.join(" ")}" type="button" data-option="${option.label}" aria-pressed="${selected}"><span class="option-key">${option.label}</span><span>${option.text}</span></button>`;
+        }).join("");
         options.style.display = item.options.length ? "grid" : "none";
+        options.querySelectorAll(".option").forEach((button) => button.addEventListener("click", () => chooseOption(button.dataset.option)));
         answerText.textContent = item.answer || "题库暂未填写标准答案，先记下思路，之后和老师或课本核对。";
         flashcard.classList.toggle("revealed", state.revealed);
         revealButton.textContent = state.revealed ? "合上答案 ↺" : "翻开答案 ✦";
@@ -399,6 +420,7 @@
       function selectQuestion(id) {
         state.currentId = id;
         state.revealed = false;
+        state.selectedChoices.clear();
         renderNumbers();
         renderCard();
         if (window.innerWidth < 1000) flashcard.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -410,6 +432,21 @@
         const index = visible.findIndex((item) => item.id === state.currentId);
         const nextIndex = index < 0 ? 0 : (index + step + visible.length) % visible.length;
         selectQuestion(visible[nextIndex].id);
+      }
+
+      function chooseOption(label) {
+        const item = getQuestion(state.currentId);
+        if (!item || !item.options.length) return;
+        const answers = answerLetters(item.answer);
+        if (item.type === "多选题") {
+          if (state.selectedChoices.has(label)) state.selectedChoices.delete(label);
+          else state.selectedChoices.add(label);
+        } else {
+          state.selectedChoices = new Set([label]);
+        }
+        const correct = answers.includes(label);
+        showToast(correct ? "选对啦，继续保持" : "粉色表示选错了，再想想");
+        renderCard();
       }
 
       revealButton.addEventListener("click", () => { state.revealed = !state.revealed; renderCard(); });
@@ -432,7 +469,7 @@
         renderNumbers();
         move(1);
       });
-      $("#retry-button").addEventListener("click", () => { state.revealed = false; renderCard(); });
+      $("#retry-button").addEventListener("click", () => { state.revealed = false; state.selectedChoices.clear(); renderCard(); });
       searchInput.addEventListener("input", () => { state.search = searchInput.value; renderNumbers(); });
       document.addEventListener("keydown", (event) => {
         if (event.target.matches("input")) return;
