@@ -152,7 +152,8 @@
     .number-button.current { background: var(--sky-strong); color: #fff; box-shadow: 3px 4px 0 rgba(77,158,183,.2); }
     .number-button.done { background: var(--mint); color: #397c67; }
     .number-button.exam-correct { background: #d6f2e4; color: #246b57; box-shadow: inset 0 0 0 2px rgba(95,174,147,.3); }
-    .number-button.exam-wrong { background: #ffd8e1; color: #9a3c57; box-shadow: inset 0 0 0 2px rgba(227,128,151,.28); }
+     .number-button.exam-wrong { background: #ffd8e1; color: #9a3c57; box-shadow: inset 0 0 0 2px rgba(227,128,151,.28); }
+     .number-button.wrong-review { background: #ffd8e1; color: #9a3c57; }
     .number-button.favorite { box-shadow: inset 0 0 0 2px var(--coral); }
     .empty-state { grid-column: 1 / -1; padding: 22px 10px; color: var(--muted); font-size: 13px; text-align: center; }
     .exam-result { display: none; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px; margin-top: 18px; padding: 17px; border-radius: 20px; background: var(--butter); box-shadow: var(--shadow-soft); }
@@ -174,7 +175,7 @@
       .number-grid { max-height: 200px; }
     }
     @media (max-width: 620px) {
-      .app { padding: 18px 14px 34px; }
+       .app { padding: 18px 14px 112px; }
       .topbar { margin-bottom: 21px; }
       .top-status { display: none; }
       h1 { font-size: 34px; }
@@ -195,8 +196,10 @@
       .option { grid-template-columns: 30px 1fr; gap: 9px; padding: 11px 12px; font-size: 14px; }
       .card-footer { align-items: flex-end; }
       .card-tip { max-width: 170px; }
-      .action-row { display: grid; grid-template-columns: 1fr 1fr; }
-      .primary-button { grid-column: 1 / -1; }
+       .action-row { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 10; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0; padding: 8px; border-radius: 19px; background: rgba(255,253,248,.94); box-shadow: 0 12px 28px rgba(36,77,101,.2), inset 3px 3px 8px rgba(255,255,255,.85); backdrop-filter: blur(12px); }
+       .action-row .primary-button { grid-column: auto; }
+       .action-row .soft-button, .action-row .primary-button { min-width: 0; min-height: 43px; padding: 6px 4px; font-size: 12px; }
+       .action-row .primary-button span { display: none; }
       .side-panel { padding: 18px; }
       .number-grid { grid-template-columns: repeat(10, minmax(0, 1fr)); }
     }
@@ -246,6 +249,7 @@
             <div class="mode-switch" role="group" aria-label="选择学习模式">
               <button class="mode-button active" id="study-mode-button" type="button" data-mode="study" aria-pressed="true">学习模式</button>
               <button class="mode-button" id="exam-mode-button" type="button" data-mode="exam" aria-pressed="false">考试模式</button>
+              <button class="mode-button shuffle-button" id="shuffle-button" type="button" title="打乱题目顺序">↝ 乱序</button>
             </div>
           </div>
           <div class="progress-pill"><strong id="card-progress">1 / 148</strong><span>当前题目</span></div>
@@ -311,14 +315,18 @@
       const questions = window.QUESTION_BANK || [];
       const storageKey = "design-history-flashcards-v1";
       const saved = JSON.parse(localStorage.getItem(storageKey) || "{}") || {};
+      const defaultOrder = questions.map((item) => item.id);
+      const savedOrder = Array.isArray(saved.questionOrder) ? saved.questionOrder.map(Number).filter((id) => defaultOrder.includes(id)) : [];
       const state = {
-        currentId: Number(saved.currentId) || 1,
-        revealed: false,
+         currentId: Number(saved.currentId) || 1,
+         questionOrder: savedOrder.length === defaultOrder.length && new Set(savedOrder).size === defaultOrder.length ? savedOrder : defaultOrder,
+         revealed: false,
         mode: "study",
         filter: "全部",
         search: "",
-        remembered: new Set(Array.isArray(saved.remembered) ? saved.remembered : []),
-        favorites: new Set(Array.isArray(saved.favorites) ? saved.favorites : []),
+         remembered: new Set(Array.isArray(saved.remembered) ? saved.remembered : []),
+         favorites: new Set(Array.isArray(saved.favorites) ? saved.favorites : []),
+         wrongAnswers: new Set(Array.isArray(saved.wrongAnswers) ? saved.wrongAnswers.map(Number) : []),
         selectedChoices: new Set(),
         examAnswered: new Set(),
         examCorrect: new Set(),
@@ -341,7 +349,8 @@
       const reviewActions = $("#review-actions");
       const studyKicker = $("#study-kicker");
       const studyTitle = $("#study-title");
-      const modeButtons = document.querySelectorAll(".mode-button");
+       const modeButtons = document.querySelectorAll(".mode-button[data-mode]");
+       const shuffleButton = $("#shuffle-button");
       const examResult = $("#exam-result");
       const examScore = $("#exam-score");
       const examSummary = $("#exam-summary");
@@ -350,11 +359,12 @@
       const numberGrid = $("#number-grid");
       const toast = $("#toast");
       let toastTimer;
+      const wrongReviewFilter = "__WRONG_REVIEW__";
 
       const typeOrder = ["全部", "单选题", "多选题", "填空题", "简答题", "论述题", "判断题"];
 
       function persist() {
-        localStorage.setItem(storageKey, JSON.stringify({ currentId: state.currentId, remembered: [...state.remembered], favorites: [...state.favorites] }));
+         localStorage.setItem(storageKey, JSON.stringify({ currentId: state.currentId, questionOrder: state.questionOrder, remembered: [...state.remembered], favorites: [...state.favorites], wrongAnswers: [...state.wrongAnswers] }));
       }
 
       function getQuestion(id) {
@@ -367,7 +377,11 @@
 
       function getVisibleQuestions() {
         const keyword = state.search.trim().toLowerCase();
-        return questions.filter((item) => {
+         const orderedQuestions = state.questionOrder.map((id) => getQuestion(id)).filter(Boolean);
+         if (state.filter === wrongReviewFilter) {
+           return orderedQuestions.filter((item) => state.wrongAnswers.has(item.id) && (!keyword || `${item.question} ${item.answer}`.toLowerCase().includes(keyword)));
+         }
+         return orderedQuestions.filter((item) => {
           const matchType = state.filter === "全部" || item.type === state.filter;
           const matchSearch = !keyword || `${item.question} ${item.answer} ${item.options.map((option) => option.text).join(" ")}`.toLowerCase().includes(keyword);
           return matchType && matchSearch;
@@ -382,12 +396,23 @@
       }
 
       function renderFilters() {
-        filterList.innerHTML = typeOrder.map((type) => `<button class="filter-button${state.filter === type ? " active" : ""}" type="button" data-filter="${type}">${type}</button>`).join("");
-        filterList.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
-          state.filter = button.dataset.filter;
-          renderFilters();
-          renderNumbers();
-        }));
+         if (!typeOrder.includes(wrongReviewFilter)) typeOrder.push(wrongReviewFilter);
+         filterList.innerHTML = typeOrder.map((type) => {
+           const label = type === wrongReviewFilter ? "错题回顾" : type;
+           return `<button class="filter-button${state.filter === type ? " active" : ""}" type="button" data-filter="${type}">${label}</button>`;
+         }).join("");
+         filterList.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+           state.filter = button.dataset.filter;
+           const visible = getVisibleQuestions();
+           if (visible.length && !visible.some((item) => item.id === state.currentId)) {
+             state.currentId = visible[0].id;
+             state.revealed = false;
+             state.selectedChoices.clear();
+           }
+           renderFilters();
+           renderNumbers();
+           renderCard();
+         }));
       }
 
       function renderMode() {
@@ -420,8 +445,9 @@
         numberGrid.innerHTML = visible.map((item) => {
           const classes = ["number-button"];
           if (item.id === state.currentId) classes.push("current");
-          if (state.remembered.has(item.id)) classes.push("done");
-          if (state.favorites.has(item.id)) classes.push("favorite");
+           if (state.remembered.has(item.id)) classes.push("done");
+           if (state.favorites.has(item.id)) classes.push("favorite");
+           if (state.wrongAnswers.has(item.id)) classes.push("wrong-review");
           if (state.mode === "exam" && state.examCorrect.has(item.id)) classes.push("exam-correct");
           if (state.mode === "exam" && state.examLocked.has(item.id) && !state.examCorrect.has(item.id)) classes.push("exam-wrong");
           return `<button class="${classes.join(" ")}" type="button" data-id="${item.id}" aria-label="第 ${item.id} 题">${item.id}</button>`;
@@ -430,8 +456,13 @@
       }
 
       function renderCard() {
-        const item = getQuestion(state.currentId);
-        if (!item) return;
+         const item = getQuestion(state.currentId);
+         if (!item) return;
+         const visible = getVisibleQuestions();
+         const position = visible.findIndex((entry) => entry.id === item.id);
+         const totalVisible = visible.length || questions.length;
+         const atStart = position <= 0;
+         const atEnd = position < 0 || position === visible.length - 1;
         const examLocked = state.mode === "exam" && state.examLocked.has(item.id);
         const cardRevealed = state.revealed || examLocked;
         const examObjective = state.mode === "exam" && item.options.length > 0;
@@ -464,15 +495,15 @@
         favoriteButton.classList.toggle("is-favorite", state.favorites.has(item.id));
         favoriteButton.setAttribute("aria-pressed", state.favorites.has(item.id));
         favoriteButton.querySelector(".favorite-symbol").textContent = state.favorites.has(item.id) ? "♥" : "♡";
-        $("#card-progress").textContent = `${item.id} / ${questions.length}`;
+         $("#card-progress").textContent = `${position < 0 ? 1 : position + 1} / ${totalVisible}`;
         const progressCount = state.mode === "exam" ? state.examAnswered.size : state.remembered.size;
         $("#progress-label").textContent = `${progressCount} / ${questions.length}`;
         $("#progress-fill").style.width = `${Math.min(100, (progressCount / questions.length) * 100)}%`;
         $("#done-stat").textContent = progressCount;
         $("#done-label").textContent = state.mode === "exam" ? "题已作答" : "张已记住";
-        previousButton.disabled = item.id === 1;
-        nextButton.disabled = state.mode === "study" && item.id === questions.length;
-        nextButton.textContent = state.mode === "exam" && item.id === questions.length ? "查看成绩 →" : "下一题 →";
+         previousButton.disabled = atStart;
+         nextButton.disabled = state.mode === "study" && atEnd;
+         nextButton.textContent = state.mode === "exam" && atEnd ? "查看成绩 →" : "下一题 →";
         persist();
       }
 
@@ -497,7 +528,8 @@
       function move(step) {
         const visible = getVisibleQuestions();
         if (!visible.length) return;
-        if (state.mode === "exam" && step > 0 && state.currentId === questions.length) {
+         const currentIndex = visible.findIndex((item) => item.id === state.currentId);
+         if (state.mode === "exam" && step > 0 && currentIndex === visible.length - 1) {
           if (state.examAnswered.size === questions.length) renderExamResult();
           else showToast(`还有 ${questions.length - state.examAnswered.size} 题未完成`);
           return;
@@ -510,10 +542,15 @@
       function finishExamAnswer(isCorrect) {
         const item = getQuestion(state.currentId);
         if (!item || state.mode !== "exam" || state.examLocked.has(item.id)) return;
-        state.examAnswered.add(item.id);
-        state.examLocked.add(item.id);
-        if (isCorrect) state.examCorrect.add(item.id);
-        else state.examCorrect.delete(item.id);
+         state.examAnswered.add(item.id);
+         state.examLocked.add(item.id);
+         if (isCorrect) {
+           state.examCorrect.add(item.id);
+           state.wrongAnswers.delete(item.id);
+         } else {
+           state.examCorrect.delete(item.id);
+           state.wrongAnswers.add(item.id);
+         }
         state.revealed = true;
         renderNumbers();
         renderCard();
@@ -522,15 +559,42 @@
       }
 
       function markExamSubjective(isCorrect) {
-        const item = getQuestion(state.currentId);
-        if (!item || item.options.length || state.mode !== "exam") return;
-        finishExamAnswer(isCorrect);
+         const item = getQuestion(state.currentId);
+         if (!item || item.options.length || state.mode !== "exam") return;
+         finishExamAnswer(isCorrect);
+      }
+
+      function shuffledOrder() {
+         const order = [...defaultOrder];
+         for (let index = order.length - 1; index > 0; index -= 1) {
+           const swapIndex = Math.floor(Math.random() * (index + 1));
+           [order[index], order[swapIndex]] = [order[swapIndex], order[index]];
+         }
+         return order;
+      }
+
+      function shuffleQuestions() {
+         state.questionOrder = shuffledOrder();
+         state.currentId = state.questionOrder[0] || 1;
+         state.revealed = false;
+         state.selectedChoices.clear();
+         if (state.mode === "exam") {
+           state.examAnswered.clear();
+           state.examCorrect.clear();
+           state.examLocked.clear();
+           examResult.classList.remove("visible");
+         }
+         renderFilters();
+         renderNumbers();
+         renderCard();
+         showToast("题目顺序已打乱");
       }
 
       function setMode(mode) {
-        if (mode === state.mode) return;
-        state.mode = mode;
-        state.currentId = 1;
+         if (mode === state.mode) return;
+         state.mode = mode;
+         if (mode === "exam") state.questionOrder = shuffledOrder();
+         state.currentId = state.questionOrder[0] || 1;
         state.revealed = false;
         state.filter = "全部";
         state.search = "";
@@ -581,7 +645,11 @@
         } else {
           state.selectedChoices = new Set([label]);
         }
-        const correct = answers.includes(label);
+         const correct = answers.includes(label);
+         const multiChoice = answers.length > 1;
+         const complete = multiChoice && answers.length === state.selectedChoices.size && answers.every((answer) => state.selectedChoices.has(answer));
+         if (correct && (!multiChoice || complete)) state.wrongAnswers.delete(item.id);
+         if (!correct) state.wrongAnswers.add(item.id);
         showToast(correct ? "选对啦，继续保持" : "粉色表示选错了，再想想");
         renderCard();
       }
@@ -612,7 +680,8 @@
           markExamSubjective(true);
           return;
         }
-        state.remembered.add(state.currentId);
+         state.remembered.add(state.currentId);
+         state.wrongAnswers.delete(state.currentId);
         showToast("记忆进度 +1，继续保持");
         renderNumbers();
         move(1);
@@ -621,15 +690,18 @@
         if (state.mode === "exam") {
           markExamSubjective(false);
           return;
-        }
-        state.revealed = false;
+         }
+         state.wrongAnswers.add(state.currentId);
+         state.revealed = false;
         state.selectedChoices.clear();
         renderCard();
       });
       modeButtons.forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
+      shuffleButton.addEventListener("click", shuffleQuestions);
       $("#restart-exam").addEventListener("click", () => {
-        state.mode = "exam";
-        state.currentId = 1;
+         state.mode = "exam";
+         state.questionOrder = shuffledOrder();
+         state.currentId = state.questionOrder[0] || 1;
         state.revealed = false;
         state.filter = "全部";
         state.search = "";
@@ -645,7 +717,17 @@
         renderCard();
         showToast("新的考试开始");
       });
-      searchInput.addEventListener("input", () => { state.search = searchInput.value; renderNumbers(); });
+      searchInput.addEventListener("input", () => {
+         state.search = searchInput.value;
+         const visible = getVisibleQuestions();
+         if (visible.length && !visible.some((item) => item.id === state.currentId)) {
+           state.currentId = visible[0].id;
+           state.revealed = false;
+           state.selectedChoices.clear();
+         }
+         renderNumbers();
+         renderCard();
+      });
       document.addEventListener("keydown", (event) => {
         if (event.target.matches("input")) return;
         if (event.key === "ArrowLeft") move(-1);
